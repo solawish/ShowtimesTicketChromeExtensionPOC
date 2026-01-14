@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "秀泰影城購票輔助工具",
+  "version": "1.0.0",
+  "description": "秀泰影城購票輔助工具",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://capi.showtimes.com.tw/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
