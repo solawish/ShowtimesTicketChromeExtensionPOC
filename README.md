@@ -69,11 +69,10 @@ ShowtimesTicket/
 ## 技術細節
 
 ### API 端點
-- 電影列表：`https://capi.showtimes.com.tw/1/movies`
-- 場地列表：`https://capi.showtimes.com.tw/1/venues`
-- 場次列表：`https://capi.showtimes.com.tw/1/events`
-- 票種列表：`https://capi.showtimes.com.tw/1/ticketTypes`
-- 座位列表：`https://capi.showtimes.com.tw/1/seats/listForEvent/{eventId}`
+- 應用程式初始化（取得電影列表）：`GET https://capi.showtimes.com.tw/1/app/bootstrap?appVersion=2.9.200`
+- 場地和場次列表：`GET https://capi.showtimes.com.tw/1/events/listForProgram/{movieId}?date={date}&forVista=false`
+- 票種列表：`GET https://capi.showtimes.com.tw/1/ticketTypes/forEvent/{eventId}?includeGroupTicket=true&includeMemberRedeem=true&version=03.00.00`
+- 座位列表：`GET https://capi.showtimes.com.tw/1/seats/listForEvent/{eventId}`
 - 鎖定座位：`POST https://capi.showtimes.com.tw/1/seats/lockForEvent/{eventId}`
 - 建立訂單：`POST https://capi.showtimes.com.tw/1/orders`
 
