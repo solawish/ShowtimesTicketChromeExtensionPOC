@@ -25,7 +25,8 @@ const elements = {
   venueError: document.getElementById('venue-error'),
   timeError: document.getElementById('time-error'),
   ticketTypeError: document.getElementById('ticket-type-error'),
-  statusMessage: document.getElementById('status-message')
+  statusMessage: document.getElementById('status-message'),
+  bookButton: document.getElementById('book-button')
 };
 
 // 初始化
@@ -33,6 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSavedState();
   await loadMovies();
   setupEventListeners();
+  updateBookButtonState();
 });
 
 // 設定事件監聽器
@@ -42,6 +44,7 @@ function setupEventListeners() {
   elements.timeSelect.addEventListener('change', handleTimeChange);
   elements.ticketTypeSelect.addEventListener('change', handleTicketTypeChange);
   elements.quantitySelect.addEventListener('change', handleQuantityChange);
+  elements.bookButton.addEventListener('click', handleBookClick);
 }
 
 // 載入電影列表
@@ -90,6 +93,12 @@ async function handleMovieChange() {
   if (!movieId) {
     resetDependentMenus(['venue', 'time', 'ticketType', 'quantity']);
     config.movieId = null;
+    config.venueId = null;
+    config.venueName = null;
+    config.eventId = null;
+    config.ticketTypeCategory = null;
+    config.quantity = 1;
+    updateBookButtonState();
     await saveState();
     return;
   }
@@ -108,6 +117,7 @@ async function handleMovieChange() {
     config.venueNameToIds = {};
     // 重置下層選單，但保持禁用狀態（會在 loadVenuesAndTimes 中啟用）
     resetDependentMenus(['venue', 'time', 'ticketType', 'quantity']);
+    updateBookButtonState();
   }
   
   await saveState();
@@ -183,6 +193,10 @@ function handleVenueChange() {
     resetDependentMenus(['time', 'ticketType', 'quantity']);
     config.venueId = null;
     config.venueName = null;
+    config.eventId = null;
+    config.ticketTypeCategory = null;
+    config.quantity = 1;
+    updateBookButtonState();
     saveState();
     return;
   }
@@ -203,6 +217,7 @@ function handleVenueChange() {
     config.quantity = 1;
     // 重置下層選單，但保持禁用狀態（會在 updateTimeOptions 中啟用）
     resetDependentMenus(['time', 'ticketType', 'quantity']);
+    updateBookButtonState();
   }
   
   saveState();
@@ -257,6 +272,7 @@ async function handleTimeChange() {
   if (!eventId) {
     resetDependentMenus(['ticketType', 'quantity']);
     config.eventId = null;
+    updateBookButtonState();
     await saveState();
     return;
   }
@@ -264,6 +280,7 @@ async function handleTimeChange() {
   // 當時間改變為新值時，重置所有下層選單的 config 值
   const previousEventId = config.eventId;
   config.eventId = parseInt(eventId);
+  updateBookButtonState();
   
   // 如果時間改變了（不是第一次選擇），重置下層選單的 config 值
   if (previousEventId !== null && previousEventId !== config.eventId) {
@@ -376,12 +393,19 @@ function handleQuantityChange() {
 
 // 檢查配置是否完成
 function checkCompletion() {
+  updateBookButtonState();
   if (config.movieId && config.venueId && config.eventId && 
       config.ticketTypeCategory && config.quantity) {
     showStatusMessage('配置完成！', 'success');
   } else {
     hideStatusMessage();
   }
+}
+
+// 更新訂票按鈕可用狀態
+function updateBookButtonState() {
+  if (!elements.bookButton) return;
+  elements.bookButton.disabled = !config.eventId;
 }
 
 // 重置依賴選單
@@ -514,4 +538,101 @@ async function loadSavedState() {
   } catch (error) {
     console.error('載入狀態失敗:', error);
   }
+}
+
+// 處理訂票按鈕：取得座位並輸出選中的座位
+async function handleBookClick() {
+  if (!config.eventId) {
+    showStatusMessage('請先選擇電影、場地與時間', 'error');
+    return;
+  }
+  
+  showStatusMessage('取得座位中...', 'info');
+  try {
+    const jwt = await getShowtimesJwt();
+    if (!jwt) {
+      throw new Error('無法取得登入權杖，請確認已在秀泰網站登入');
+    }
+    
+    const seat = await fetchFirstAvailableSeat(config.eventId, jwt);
+    console.log('已選擇座位:', seat);
+    showStatusMessage('已選擇座位，請查看 console', 'success');
+  } catch (error) {
+    console.error('取得座位失敗:', error);
+    showStatusMessage(error.message || '取得座位失敗，請稍後再試', 'error');
+  }
+}
+
+// 從秀泰網站的 localStorage 取得 JWT
+async function getShowtimesJwt() {
+  const activeTab = await getActiveShowtimesTab();
+  if (!activeTab) {
+    throw new Error('請先在秀泰網站分頁開啟並登入');
+  }
+  
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: activeTab.id },
+    func: () => {
+      const loginKey = Object.keys(localStorage).find(key =>
+        key.startsWith('LoginSore.loggedInUser.')
+      );
+      if (!loginKey) return null;
+      try {
+        const raw = localStorage.getItem(loginKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed && parsed.jwt ? parsed.jwt : null;
+      } catch (err) {
+        console.warn('解析登入資訊失敗', err);
+        return null;
+      }
+    }
+  });
+  
+  return result;
+}
+
+// 取得目前視窗中秀泰網站的分頁
+async function getActiveShowtimesTab() {
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  if (!tabs || !tabs.length) return null;
+  
+  // 優先使用當前分頁，其次使用同視窗中的其他秀泰分頁
+  const activeTab = tabs.find(tab => tab.active);
+  if (activeTab && isShowtimesUrl(activeTab.url)) {
+    return activeTab;
+  }
+  
+  const otherShowtimesTab = tabs.find(tab => isShowtimesUrl(tab.url));
+  return otherShowtimesTab || null;
+}
+
+// 簡易判斷是否為秀泰網站
+function isShowtimesUrl(url) {
+  return typeof url === 'string' && url.includes('showtimes.com.tw');
+}
+
+// 呼叫座位 API 並挑選第一個可用座位
+async function fetchFirstAvailableSeat(eventId, jwt) {
+  const url = `https://capi.showtimes.com.tw/1/seats/listForEvent/${eventId}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${jwt}`
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error('座位 API 請求失敗');
+  }
+  
+  const data = await response.json();
+  const seats = data && data.payload && Array.isArray(data.payload.seats)
+    ? data.payload.seats
+    : [];
+  
+  const availableSeat = seats.find(seat => seat && seat.e === true);
+  if (!availableSeat) {
+    throw new Error('沒有可用座位');
+  }
+  
+  return availableSeat;
 }
