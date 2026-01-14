@@ -5,6 +5,8 @@ const config = {
   venueName: null, // 儲存選定的場地名稱
   eventId: null,
   ticketTypeCategory: null,
+  selectedTicketType: null, // 儲存選定的完整票種物件
+  ticketTypes: [], // 暫存票種資料
   quantity: 1,
   events: [], // 暫存場次資料
   venueNameToIds: {} // 場地名稱到 ID 陣列的映射
@@ -97,6 +99,8 @@ async function handleMovieChange() {
     config.venueName = null;
     config.eventId = null;
     config.ticketTypeCategory = null;
+    config.selectedTicketType = null;
+    config.ticketTypes = [];
     config.quantity = 1;
     updateBookButtonState();
     await saveState();
@@ -113,6 +117,8 @@ async function handleMovieChange() {
     config.venueName = null;
     config.eventId = null;
     config.ticketTypeCategory = null;
+    config.selectedTicketType = null;
+    config.ticketTypes = [];
     config.quantity = 1;
     config.venueNameToIds = {};
     // 重置下層選單，但保持禁用狀態（會在 loadVenuesAndTimes 中啟用）
@@ -195,6 +201,8 @@ function handleVenueChange() {
     config.venueName = null;
     config.eventId = null;
     config.ticketTypeCategory = null;
+    config.selectedTicketType = null;
+    config.ticketTypes = [];
     config.quantity = 1;
     updateBookButtonState();
     saveState();
@@ -214,6 +222,8 @@ function handleVenueChange() {
   if (previousVenueName !== null && previousVenueName !== config.venueName) {
     config.eventId = null;
     config.ticketTypeCategory = null;
+    config.selectedTicketType = null;
+    config.ticketTypes = [];
     config.quantity = 1;
     // 重置下層選單，但保持禁用狀態（會在 updateTimeOptions 中啟用）
     resetDependentMenus(['time', 'ticketType', 'quantity']);
@@ -307,11 +317,25 @@ async function loadTicketTypes() {
     const data = await response.json();
     
     if (data.msg === 'Success' && data.payload && data.payload.ticketTypes) {
+      // 暫存完整的票種資料
+      config.ticketTypes = data.payload.ticketTypes;
+      
       elements.ticketTypeSelect.innerHTML = '<option value="">請選擇票種</option>';
       
       data.payload.ticketTypes.forEach(ticketType => {
         const option = document.createElement('option');
-        option.value = ticketType.category;
+        // 取得 subCategory，可能從 ticketType.subCategory 或 meta.sources.vista 中取得
+        let subCategory = ticketType.subCategory;
+        if (!subCategory && ticketType.meta && ticketType.meta.sources && ticketType.meta.sources.vista) {
+          const vistaSource = ticketType.meta.sources.vista;
+          if (typeof vistaSource === 'string' && vistaSource.includes('-')) {
+            subCategory = vistaSource.split('-')[1];
+          } else if (vistaSource && vistaSource.TicketTypeCode) {
+            subCategory = vistaSource.TicketTypeCode;
+          }
+        }
+        // 使用 category.subCategory 作為 value
+        option.value = `${ticketType.category}.${subCategory || ''}`;
         option.textContent = ticketType.title;
         elements.ticketTypeSelect.appendChild(option);
       });
@@ -321,6 +345,24 @@ async function loadTicketTypes() {
       // 恢復票種選擇
       if (config.ticketTypeCategory) {
         elements.ticketTypeSelect.value = config.ticketTypeCategory;
+        // 恢復選定的完整票種物件
+        // config.ticketTypeCategory 現在是 category.subCategory 格式
+        const [category, subCategory] = config.ticketTypeCategory.split('.');
+        const selectedType = config.ticketTypes.find(tt => {
+          let ttSubCategory = tt.subCategory;
+          if (!ttSubCategory && tt.meta && tt.meta.sources && tt.meta.sources.vista) {
+            const vistaSource = tt.meta.sources.vista;
+            if (typeof vistaSource === 'string' && vistaSource.includes('-')) {
+              ttSubCategory = vistaSource.split('-')[1];
+            } else if (vistaSource && vistaSource.TicketTypeCode) {
+              ttSubCategory = vistaSource.TicketTypeCode;
+            }
+          }
+          return tt.category === category && (ttSubCategory || '') === (subCategory || '');
+        });
+        if (selectedType) {
+          config.selectedTicketType = selectedType;
+        }
         updateQuantityOptions();
       } else {
         // 確保顯示預設選項
@@ -339,18 +381,37 @@ async function loadTicketTypes() {
 
 // 處理票種選擇變更
 function handleTicketTypeChange() {
-  const category = elements.ticketTypeSelect.value;
+  const value = elements.ticketTypeSelect.value; // 現在是 category.subCategory 格式
   
-  if (!category) {
+  if (!value) {
     resetDependentMenus(['quantity']);
     config.ticketTypeCategory = null;
+    config.selectedTicketType = null;
     saveState();
     return;
   }
   
   // 當票種改變為新值時，重置數量選單的 config 值
   const previousCategory = config.ticketTypeCategory;
-  config.ticketTypeCategory = category;
+  config.ticketTypeCategory = value; // 儲存 category.subCategory 格式
+  
+  // 從暫存的票種資料中找出完整的票種物件
+  const [category, subCategory] = value.split('.');
+  const selectedType = config.ticketTypes.find(tt => {
+    let ttSubCategory = tt.subCategory;
+    if (!ttSubCategory && tt.meta && tt.meta.sources && tt.meta.sources.vista) {
+      const vistaSource = tt.meta.sources.vista;
+      if (typeof vistaSource === 'string' && vistaSource.includes('-')) {
+        ttSubCategory = vistaSource.split('-')[1];
+      } else if (vistaSource && vistaSource.TicketTypeCode) {
+        ttSubCategory = vistaSource.TicketTypeCode;
+      }
+    }
+    return tt.category === category && (ttSubCategory || '') === (subCategory || '');
+  });
+  if (selectedType) {
+    config.selectedTicketType = selectedType;
+  }
   
   // 如果票種改變了（不是第一次選擇），重置數量選單的 config 值
   if (previousCategory !== null && previousCategory !== config.ticketTypeCategory) {
@@ -540,26 +601,63 @@ async function loadSavedState() {
   }
 }
 
-// 處理訂票按鈕：取得座位並輸出選中的座位
+// 處理訂票按鈕：取得座位、鎖定座位並建立訂單
 async function handleBookClick() {
   if (!config.eventId) {
     showStatusMessage('請先選擇電影、場地與時間', 'error');
     return;
   }
   
-  showStatusMessage('取得座位中...', 'info');
+  if (!config.selectedTicketType) {
+    showStatusMessage('請先選擇票種', 'error');
+    return;
+  }
+  
+  if (!config.quantity) {
+    showStatusMessage('請先選擇數量', 'error');
+    return;
+  }
+  
   try {
+    // 取得 JWT
+    showStatusMessage('取得登入權杖中...', 'info');
     const jwt = await getShowtimesJwt();
     if (!jwt) {
       throw new Error('無法取得登入權杖，請確認已在秀泰網站登入');
     }
     
-    const seat = await fetchFirstAvailableSeat(config.eventId, jwt);
-    console.log('已選擇座位:', seat);
-    showStatusMessage('已選擇座位，請查看 console', 'success');
+    // 取得座位（每次訂票都重新取得）
+    showStatusMessage('取得座位中...', 'info');
+    const seats = await fetchAvailableSeats(config.eventId, config.quantity, jwt);
+    console.log('已選擇座位:', seats);
+    
+    // 鎖定座位
+    showStatusMessage('鎖定座位中...', 'info');
+    const lockResult = await lockSeatsForEvent(
+      config.eventId,
+      seats,
+      config.selectedTicketType,
+      config.quantity,
+      jwt
+    );
+    console.log('鎖定座位成功:', lockResult);
+    
+    // 建立訂單
+    showStatusMessage('建立訂單中...', 'info');
+    const orderResult = await createOrder(
+      config.eventId,
+      seats,
+      config.selectedTicketType,
+      config.quantity,
+      lockResult.orderNo,
+      jwt
+    );
+    console.log('建立訂單成功:', orderResult);
+    
+    showStatusMessage('訂票成功！', 'success');
   } catch (error) {
-    console.error('取得座位失敗:', error);
-    showStatusMessage(error.message || '取得座位失敗，請稍後再試', 'error');
+    console.error('訂票流程失敗:', error);
+    showStatusMessage(error.message || '訂票失敗，請稍後再試', 'error');
   }
 }
 
@@ -611,8 +709,8 @@ function isShowtimesUrl(url) {
   return typeof url === 'string' && url.includes('showtimes.com.tw');
 }
 
-// 呼叫座位 API 並挑選第一個可用座位
-async function fetchFirstAvailableSeat(eventId, jwt) {
+// 呼叫座位 API 並挑選可用座位
+async function fetchAvailableSeats(eventId, quantity, jwt) {
   const url = `https://capi.showtimes.com.tw/1/seats/listForEvent/${eventId}`;
   const response = await fetch(url, {
     headers: {
@@ -629,10 +727,184 @@ async function fetchFirstAvailableSeat(eventId, jwt) {
     ? data.payload.seats
     : [];
   
-  const availableSeat = seats.find(seat => seat && seat.e === true);
-  if (!availableSeat) {
-    throw new Error('沒有可用座位');
+  // 取得所有可用座位
+  const allAvailableSeats = seats.filter(seat => seat && seat.e === true);
+  
+  if (allAvailableSeats.length < quantity) {
+    throw new Error(`可用座位不足，需要 ${quantity} 個座位，但只有 ${allAvailableSeats.length} 個可用`);
   }
   
-  return availableSeat;
+  // 隨機排序可用座位，避免每次都選到固定的座位
+  const shuffledSeats = [...allAvailableSeats].sort(() => Math.random() - 0.5);
+  
+  // 取得指定數量的座位
+  const selectedSeats = shuffledSeats.slice(0, quantity);
+  
+  return selectedSeats;
+}
+
+// 產生 GUID
+function generateGuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// 鎖定座位
+async function lockSeatsForEvent(eventId, seats, ticketType, quantity, jwt) {
+  const url = `https://capi.showtimes.com.tw/1/seats/lockForEvent/${eventId}`;
+  const orderGuid = generateGuid();
+  
+  // 建構 selectedTicketTypes 陣列
+  const selectedTicketTypes = [{
+    ...ticketType,
+    selectedTtCount: quantity
+  }];
+  
+  const requestBody = {
+    seats: seats, // seats 已經是陣列
+    orderGuid: orderGuid,
+    selectedTicketTypes: selectedTicketTypes
+  };
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${jwt}`
+    },
+    body: JSON.stringify(requestBody)
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.msg || '鎖定座位失敗');
+  }
+  
+  const data = await response.json();
+  if (data.msg !== 'Success' || !data.payload) {
+    throw new Error('鎖定座位回應格式錯誤');
+  }
+  
+  return {
+    reservationKey: data.payload.reservationKey,
+    orderNo: data.payload.orderNo
+  };
+}
+
+// 從 localStorage 取得 email 和 phone
+async function getShowtimesUserInfo() {
+  const activeTab = await getActiveShowtimesTab();
+  if (!activeTab) {
+    throw new Error('請先在秀泰網站分頁開啟並登入');
+  }
+  
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: activeTab.id },
+    func: () => {
+      const loginKey = Object.keys(localStorage).find(key =>
+        key.startsWith('LoginSore.loggedInUser.')
+      );
+      if (!loginKey) return null;
+      try {
+        const raw = localStorage.getItem(loginKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (!parsed) return null;
+        return {
+          email: parsed.email || null,
+          phone: parsed.phone || null
+        };
+      } catch (err) {
+        console.warn('解析登入資訊失敗', err);
+        return null;
+      }
+    }
+  });
+  
+  if (!result || !result.email || !result.phone) {
+    throw new Error('無法取得使用者聯絡資訊，請確認已在秀泰網站登入並設定 email 和 phone');
+  }
+  
+  return result;
+}
+
+// 建立訂單
+async function createOrder(eventId, seats, ticketType, quantity, orderNo, jwt) {
+  const url = `https://capi.showtimes.com.tw/1/orders`;
+  
+  // 取得使用者聯絡資訊
+  const userInfo = await getShowtimesUserInfo();
+  
+  // 建構 ticketTypeCount 物件
+  // subCategory 可能在 ticketType.subCategory 或 meta.sources.vista 中（格式：CinemaId-TicketTypeCode）
+  let subCategory = ticketType.subCategory;
+  if (!subCategory && ticketType.meta && ticketType.meta.sources && ticketType.meta.sources.vista) {
+    const vistaSource = ticketType.meta.sources.vista;
+    if (typeof vistaSource === 'string' && vistaSource.includes('-')) {
+      subCategory = vistaSource.split('-')[1];
+    } else if (vistaSource && vistaSource.TicketTypeCode) {
+      subCategory = vistaSource.TicketTypeCode;
+    }
+  }
+  const ticketTypeKey = `${ticketType.category}.${subCategory || ''}`;
+  const ticketTypeCount = {};
+  ticketTypeCount[ticketTypeKey] = quantity;
+  
+  // 計算金額：票價加上手續費後，再乘以張數
+  const amount = (ticketType.price + ticketType.fee) * quantity;
+  const fee = ticketType.fee * quantity; // 從票種資料取得 fee
+  
+  const requestBody = {
+    concessionCount: {},
+    items: [{
+      event: {
+        id: eventId
+      },
+      ticketTypeCount: ticketTypeCount,
+      seats: seats, // seats 已經是陣列
+      amount: amount
+    }],
+    meta: {
+      sources: {
+        vista: {
+          orderNo: orderNo
+        }
+      },
+      receiptRequest: {
+        type: 'love',
+        data: '919',
+        email: userInfo.email
+      },
+      contact: {
+        email: userInfo.email,
+        phone: userInfo.phone
+      }
+    },
+    email: userInfo.email,
+    payWith: 'chinaTrustUrl',
+    fee: fee
+  };
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${jwt}`
+    },
+    body: JSON.stringify(requestBody)
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.msg || '建立訂單失敗');
+  }
+  
+  const data = await response.json();
+  if (data.msg !== 'Success') {
+    throw new Error('建立訂單回應格式錯誤');
+  }
+  
+  return data;
 }
