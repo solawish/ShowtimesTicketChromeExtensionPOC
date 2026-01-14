@@ -1,6 +1,5 @@
-## Purpose
-在 Chrome Extension 的 popup 介面中提供五個級聯下拉選單，讓使用者依序選擇購票所需的各項參數（電影、場地、時間、票種、數量），以便後續自動化購票流程。
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: 購票配置介面
 系統 SHALL 在 Chrome Extension 的 popup 介面中提供五個級聯下拉選單，讓使用者依序選擇電影、場地、時間、票種、數量。
 
@@ -93,4 +92,3 @@
 - **WHEN** 使用者完成所有五個選單的選擇（電影、場地、時間、票種、數量）
 - **THEN** 顯示配置完成狀態
 - **AND** 配置資訊可供後續購票流程使用
-

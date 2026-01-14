@@ -2,10 +2,12 @@
 const config = {
   movieId: null,
   venueId: null,
+  venueName: null, // 儲存選定的場地名稱
   eventId: null,
   ticketTypeCategory: null,
   quantity: 1,
-  events: [] // 暫存場次資料
+  events: [], // 暫存場次資料
+  venueNameToIds: {} // 場地名稱到 ID 陣列的映射
 };
 
 // DOM 元素
@@ -92,7 +94,22 @@ async function handleMovieChange() {
     return;
   }
   
+  // 當電影改變為新值時，重置所有下層選單的 config 值
+  const previousMovieId = config.movieId;
   config.movieId = parseInt(movieId);
+  
+  // 如果電影改變了（不是第一次選擇），重置下層選單的 config 值
+  if (previousMovieId !== null && previousMovieId !== config.movieId) {
+    config.venueId = null;
+    config.venueName = null;
+    config.eventId = null;
+    config.ticketTypeCategory = null;
+    config.quantity = 1;
+    config.venueNameToIds = {};
+    // 重置下層選單，但保持禁用狀態（會在 loadVenuesAndTimes 中啟用）
+    resetDependentMenus(['venue', 'time', 'ticketType', 'quantity']);
+  }
+  
   await saveState();
   await loadVenuesAndTimes();
 }
@@ -112,26 +129,40 @@ async function loadVenuesAndTimes() {
     const data = await response.json();
     
     if (data.msg === 'Success' && data.payload) {
+      // 先暫存場次資料，這樣 updateTimeOptions() 才能正確運作
+      config.events = data.payload.events || [];
+      
       // 載入場地
       if (data.payload.venues) {
-        elements.venueSelect.innerHTML = '<option value="">請選擇場地</option>';
+        // 建立場地名稱到 ID 陣列的映射
+        config.venueNameToIds = {};
         data.payload.venues.forEach(venue => {
+          if (!config.venueNameToIds[venue.name]) {
+            config.venueNameToIds[venue.name] = [];
+          }
+          config.venueNameToIds[venue.name].push(venue.id);
+        });
+        
+        // 去重場地名稱，只顯示唯一的 name
+        const uniqueVenueNames = Object.keys(config.venueNameToIds);
+        elements.venueSelect.innerHTML = '<option value="">請選擇場地</option>';
+        uniqueVenueNames.forEach(venueName => {
           const option = document.createElement('option');
-          option.value = venue.id;
-          option.textContent = venue.name;
+          option.value = venueName; // 使用 name 作為值
+          option.textContent = venueName;
           elements.venueSelect.appendChild(option);
         });
         elements.venueSelect.disabled = false;
         
-        // 恢復場地選擇
-        if (config.venueId) {
-          elements.venueSelect.value = config.venueId;
+        // 恢復場地選擇（使用 name）
+        if (config.venueName) {
+          elements.venueSelect.value = config.venueName;
           updateTimeOptions();
+        } else {
+          // 確保顯示預設選項
+          elements.venueSelect.value = '';
         }
       }
-      
-      // 暫存場次資料
-      config.events = data.payload.events || [];
       
     } else {
       throw new Error('無法取得場地和時間資料');
@@ -146,28 +177,57 @@ async function loadVenuesAndTimes() {
 
 // 處理場地選擇變更
 function handleVenueChange() {
-  const venueId = elements.venueSelect.value;
+  const venueName = elements.venueSelect.value;
   
-  if (!venueId) {
+  if (!venueName) {
     resetDependentMenus(['time', 'ticketType', 'quantity']);
     config.venueId = null;
+    config.venueName = null;
     saveState();
     return;
   }
   
-  config.venueId = parseInt(venueId);
+  // 當場地改變為新值時，重置所有下層選單的 config 值
+  const previousVenueName = config.venueName;
+  config.venueName = venueName;
+  
+  // 找到所有相同 name 的 venueId
+  const venueIds = config.venueNameToIds[venueName] || [];
+  // 使用第一個 id 作為主要 id（用於向後兼容）
+  config.venueId = venueIds.length > 0 ? venueIds[0] : null;
+  
+  // 如果場地改變了（不是第一次選擇），重置下層選單的 config 值
+  if (previousVenueName !== null && previousVenueName !== config.venueName) {
+    config.eventId = null;
+    config.ticketTypeCategory = null;
+    config.quantity = 1;
+    // 重置下層選單，但保持禁用狀態（會在 updateTimeOptions 中啟用）
+    resetDependentMenus(['time', 'ticketType', 'quantity']);
+  }
+  
   saveState();
   updateTimeOptions();
 }
 
 // 更新時間選項
 function updateTimeOptions() {
-  if (!config.venueId || !config.events.length) return;
+  if (!config.venueName || !config.events.length) return;
   
-  // 過濾場次
-  const filteredEvents = config.events.filter(
-    event => event.venueId === config.venueId && event.status === 'active'
+  // 找到所有相同 name 的 venueId
+  const venueIds = config.venueNameToIds[config.venueName] || [];
+  if (venueIds.length === 0) return;
+  
+  // 過濾場次：使用所有相同 name 的 venueId
+  let filteredEvents = config.events.filter(
+    event => venueIds.includes(event.venueId) && event.status === 'active'
   );
+  
+  // 按照 startedAt 時間排序：比較早的時間排在前面
+  filteredEvents.sort((a, b) => {
+    const aTime = new Date(a.startedAt).getTime();
+    const bTime = new Date(b.startedAt).getTime();
+    return aTime - bTime;
+  });
   
   elements.timeSelect.innerHTML = '<option value="">請選擇時間</option>';
   
@@ -184,6 +244,9 @@ function updateTimeOptions() {
   if (config.eventId) {
     elements.timeSelect.value = config.eventId;
     loadTicketTypes();
+  } else {
+    // 確保顯示預設選項
+    elements.timeSelect.value = '';
   }
 }
 
@@ -198,7 +261,18 @@ async function handleTimeChange() {
     return;
   }
   
+  // 當時間改變為新值時，重置所有下層選單的 config 值
+  const previousEventId = config.eventId;
   config.eventId = parseInt(eventId);
+  
+  // 如果時間改變了（不是第一次選擇），重置下層選單的 config 值
+  if (previousEventId !== null && previousEventId !== config.eventId) {
+    config.ticketTypeCategory = null;
+    config.quantity = 1;
+    // 重置下層選單，但保持禁用狀態（會在 loadTicketTypes 中啟用）
+    resetDependentMenus(['ticketType', 'quantity']);
+  }
+  
   await saveState();
   await loadTicketTypes();
 }
@@ -231,6 +305,9 @@ async function loadTicketTypes() {
       if (config.ticketTypeCategory) {
         elements.ticketTypeSelect.value = config.ticketTypeCategory;
         updateQuantityOptions();
+      } else {
+        // 確保顯示預設選項
+        elements.ticketTypeSelect.value = '';
       }
     } else {
       throw new Error('無法取得票種資料');
@@ -254,7 +331,17 @@ function handleTicketTypeChange() {
     return;
   }
   
+  // 當票種改變為新值時，重置數量選單的 config 值
+  const previousCategory = config.ticketTypeCategory;
   config.ticketTypeCategory = category;
+  
+  // 如果票種改變了（不是第一次選擇），重置數量選單的 config 值
+  if (previousCategory !== null && previousCategory !== config.ticketTypeCategory) {
+    config.quantity = 1;
+    // 重置數量選單，但保持禁用狀態（會在 updateQuantityOptions 中啟用）
+    resetDependentMenus(['quantity']);
+  }
+  
   saveState();
   updateQuantityOptions();
 }
@@ -318,6 +405,17 @@ function getPreviousMenuName(currentMenu) {
     'quantity': '票種'
   };
   return menuOrder[currentMenu] || '';
+}
+
+// 取得選單顯示名稱
+function getMenuDisplayName(menuName) {
+  const menuNames = {
+    'venue': '場地',
+    'time': '時間',
+    'ticketType': '票種',
+    'quantity': '數量'
+  };
+  return menuNames[menuName] || '';
 }
 
 // 格式化時間（轉換為 GMT+8）
@@ -389,6 +487,7 @@ async function saveState() {
       ticketConfig: {
         movieId: config.movieId,
         venueId: config.venueId,
+        venueName: config.venueName, // 儲存場地名稱
         eventId: config.eventId,
         ticketTypeCategory: config.ticketTypeCategory,
         quantity: config.quantity
@@ -407,6 +506,7 @@ async function loadSavedState() {
       const saved = result.ticketConfig;
       config.movieId = saved.movieId;
       config.venueId = saved.venueId;
+      config.venueName = saved.venueName; // 載入場地名稱
       config.eventId = saved.eventId;
       config.ticketTypeCategory = saved.ticketTypeCategory;
       config.quantity = saved.quantity || 1;
