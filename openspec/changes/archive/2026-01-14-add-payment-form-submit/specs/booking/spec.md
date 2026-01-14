@@ -1,28 +1,4 @@
-# booking Specification
-
-## Purpose
-TBD - created by archiving change add-booking-flow. Update Purpose after archive.
-## Requirements
-### Requirement: 鎖定座位
-系統 SHALL 在取得座位後，透過鎖定座位 API 鎖定選定的座位，以保留座位供後續訂單建立使用。
-
-#### Scenario: 呼叫鎖定座位 API
-- **WHEN** 系統已取得可用座位並完成票種配置
-- **THEN** 呼叫 `POST https://capi.showtimes.com.tw/1/seats/lockForEvent/{eventId}`，使用場次 ID 作為路由參數
-- **AND** 在請求標頭加入 `Authorization: Bearer <jwt>`（從秀泰網站的 localStorage 取得）
-- **AND** 請求 body 包含以下結構：
-  - `seats`: 陣列，包含前一步驟選取的座位物件
-  - `orderGuid`: 系統產生的 GUID 字串
-  - `selectedTicketTypes`: 陣列，包含選定的票種物件，每個物件包含：
-    - 從票種選單取得的完整票種物件屬性（sortOrder、category、subCategory、title、price、fee、ticketCount、restriction、meta 等）
-    - `selectedTtCount`: 票種選單中選定的數量
-- **AND** 成功取得回應中的 `payload.reservationKey` 和 `payload.orderNo`
-
-#### Scenario: 鎖定座位失敗處理
-- **WHEN** 鎖定座位 API 呼叫失敗（網路錯誤、API 錯誤等）
-- **THEN** 顯示錯誤訊息
-- **AND** 不繼續執行後續的訂單建立流程
-
+## MODIFIED Requirements
 ### Requirement: 建立訂單
 系統 SHALL 在成功鎖定座位後，透過訂單 API 建立訂單，然後動態建立付款表單並自動提交到付款頁面，完成訂票流程。
 
@@ -73,4 +49,3 @@ TBD - created by archiving change add-booking-flow. Update Purpose after archive
 - **WHEN** 訂單回應中缺少 `payload.order.payment.clientFormInputs.URLEnc`
 - **THEN** 顯示錯誤訊息
 - **AND** 不建立付款表單
-

@@ -654,7 +654,14 @@ async function handleBookClick() {
     );
     console.log('建立訂單成功:', orderResult);
     
-    showStatusMessage('訂票成功！', 'success');
+    // 取得付款資訊並提交付款表單
+    showStatusMessage('準備付款頁面...', 'info');
+    const urlEnc = orderResult?.payload?.order?.payment?.clientFormInputs?.URLEnc;
+    if (!urlEnc) {
+      throw new Error('無法取得付款資訊，訂單回應中缺少 URLEnc');
+    }
+    
+    submitPaymentForm(urlEnc);
   } catch (error) {
     console.error('訂票流程失敗:', error);
     showStatusMessage(error.message || '訂票失敗，請稍後再試', 'error');
@@ -907,4 +914,38 @@ async function createOrder(eventId, seats, ticketType, quantity, orderNo, jwt) {
   }
   
   return data;
+}
+
+// 動態建立並提交付款表單
+async function submitPaymentForm(urlEnc) {
+  if (!urlEnc) {
+    throw new Error('無法取得付款資訊，訂單回應中缺少 URLEnc');
+  }
+  
+  // 建立包含表單的 HTML 內容
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>付款處理中...</title>
+</head>
+<body>
+  <form id="paymentForm" method="POST" action="https://epos.ctbcbank.com/auth/SSLAuthUI.jsp" enctype="application/x-www-form-urlencoded">
+    <input type="hidden" name="URLEnc" value="${urlEnc.replace(/"/g, '&quot;')}">
+    <input type="hidden" name="merID" value="86511">
+  </form>
+  <script>
+    document.getElementById('paymentForm').submit();
+  </script>
+</body>
+</html>`;
+  
+  // 將 HTML 轉換為 data URL
+  const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent);
+  
+  // 開啟新 tab 並載入包含表單的 HTML
+  await chrome.tabs.create({
+    url: dataUrl
+  });
 }
