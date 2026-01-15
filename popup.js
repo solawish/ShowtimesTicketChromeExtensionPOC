@@ -734,18 +734,221 @@ async function fetchAvailableSeats(eventId, quantity, jwt) {
     ? data.payload.seats
     : [];
   
-  // 取得所有可用座位
-  const allAvailableSeats = seats.filter(seat => seat && seat.e === true);
+  // 過濾可用座位：排除沒有 e 屬性的座位，以及 e === false 的座位
+  const allAvailableSeats = seats.filter(seat => seat && seat.hasOwnProperty('e') && seat.e === true);
   
   if (allAvailableSeats.length < quantity) {
     throw new Error(`可用座位不足，需要 ${quantity} 個座位，但只有 ${allAvailableSeats.length} 個可用`);
   }
   
-  // 隨機排序可用座位，避免每次都選到固定的座位
-  const shuffledSeats = [...allAvailableSeats].sort(() => Math.random() - 0.5);
+  // 輔助函數：將 r 或 c 轉換為數字（支援字串和數字）
+  const toNumber = (value) => {
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const num = parseInt(value, 10);
+      return isNaN(num) ? 0 : num;
+    }
+    return 0;
+  };
   
-  // 取得指定數量的座位
-  const selectedSeats = shuffledSeats.slice(0, quantity);
+  // 找出所有座位的最大 r 和 c 值（用於確定座位範圍）
+  let maxR = 0;
+  let maxC = 0;
+  seats.forEach(seat => {
+    if (seat) {
+      const r = toNumber(seat.r);
+      const c = toNumber(seat.c);
+      if (r > maxR) {
+        maxR = r;
+      }
+      if (c > maxC) {
+        maxC = c;
+      }
+    }
+  });
+  
+  // 計算中間值：c 最大為 8 則選 4，最大為 9 則選 5
+  const middleC = Math.floor((maxC + 1) / 2);
+  const middleR = Math.floor((maxR + 1) / 2);
+  
+  // 計算每排（r值）的座位資訊：座位數量和有效範圍（中間50%）
+  const rowInfo = {};
+  for (let r = 1; r <= maxR; r++) {
+    const seatsInRow = seats.filter(seat => {
+      const seatR = toNumber(seat.r);
+      return seatR === r;
+    });
+    const seatCount = seatsInRow.length;
+    if (seatCount > 0) {
+      // 取得該排所有座位的c值並排序
+      const cValues = seatsInRow
+        .map(seat => toNumber(seat.c))
+        .filter(c => c > 0)
+        .sort((a, b) => a - b);
+      
+      if (cValues.length > 0) {
+        // 計算前25%和後25%的範圍，中間50%為有效範圍
+        const excludeCount = Math.ceil(cValues.length * 0.25); // 前25%的數量
+        // 確保至少有中間50%的範圍（如果座位太少，則使用全部範圍）
+        const startIndex = Math.min(excludeCount, cValues.length - 1);
+        const endIndex = Math.max(cValues.length - 1 - excludeCount, startIndex);
+        const minC = cValues[startIndex]; // 有效範圍的最小c值（排除前25%後的第一個）
+        const maxC = cValues[endIndex]; // 有效範圍的最大c值（排除後25%後的最後一個）
+        rowInfo[r] = {
+          seatCount,
+          minC,
+          maxC,
+          cValues
+        };
+      }
+    }
+  }
+  
+  // 選取座位的函數：選擇最接近中間的座位
+  const selectBestSeat = (availableSeats, previousSeat = null) => {
+    if (availableSeats.length === 0) {
+      return null;
+    }
+    
+    // 如果是選取第二張及之後的票，且前一張座位存在，優先檢查同一排
+    if (previousSeat && quantity > 1) {
+      const previousR = toNumber(previousSeat.r);
+      const previousC = toNumber(previousSeat.c);
+      
+      // 檢查該排是否有有效範圍資訊
+      if (rowInfo[previousR]) {
+        const { minC, maxC } = rowInfo[previousR];
+        
+        // 找出同一排（r值相同）且c值在有效範圍內的可用座位
+        const sameRowSeats = availableSeats.filter(seat => {
+          const seatR = toNumber(seat.r);
+          const seatC = toNumber(seat.c);
+          return seatR === previousR && seatC >= minC && seatC <= maxC;
+        });
+        
+        // 如果找到符合條件的同一排座位，優先選擇c值最接近前一個座位的
+        if (sameRowSeats.length > 0) {
+          let bestSeat = sameRowSeats[0];
+          let minCDistance = Infinity;
+          
+          sameRowSeats.forEach(seat => {
+            const seatC = toNumber(seat.c);
+            const cDistance = Math.abs(seatC - previousC);
+            if (cDistance < minCDistance) {
+              minCDistance = cDistance;
+              bestSeat = seat;
+            }
+          });
+          
+          return bestSeat;
+        }
+      }
+    }
+    
+    // 如果沒有符合同一排條件的座位，使用原本的中間偏好邏輯
+    // 先過濾掉所有不在有效範圍內的座位（排除前後25%）
+    const validRangeSeats = availableSeats.filter(seat => {
+      if (!seat) return false;
+      const seatR = toNumber(seat.r);
+      const seatC = toNumber(seat.c);
+      
+      // 檢查該排是否有有效範圍資訊
+      if (rowInfo[seatR]) {
+        const { minC, maxC } = rowInfo[seatR];
+        // 只保留在有效範圍內的座位
+        return seatC >= minC && seatC <= maxC;
+      }
+      // 如果該排沒有範圍資訊，則保留（可能是邊界情況）
+      return true;
+    });
+    
+    // 如果過濾後沒有有效座位，則使用所有可用座位（fallback）
+    const seatsToConsider = validRangeSeats.length > 0 ? validRangeSeats : availableSeats;
+    
+    // 找出 r 值最接近中間的座位（先選中間的排）
+    let bestSeats = [];
+    let minRDistance = Infinity;
+    
+    seatsToConsider.forEach(seat => {
+      if (seat) {
+        const r = toNumber(seat.r);
+        const rDistance = Math.abs(r - middleR);
+        if (rDistance < minRDistance) {
+          minRDistance = rDistance;
+          bestSeats = [seat];
+        } else if (rDistance === minRDistance) {
+          bestSeats.push(seat);
+        }
+      }
+    });
+    
+    // 如果沒有找到有效的座位，返回第一個可用座位
+    if (bestSeats.length === 0) {
+      return seatsToConsider[0] || availableSeats[0];
+    }
+    
+    // 在相同 r 值中，找出 c 值最接近中間的座位（選該排中間的座位）
+    if (bestSeats.length === 1) {
+      return bestSeats[0];
+    }
+    
+    let bestSeat = bestSeats[0];
+    let minCDistance = Infinity;
+    
+    bestSeats.forEach(seat => {
+      if (seat) {
+        const c = toNumber(seat.c);
+        const cDistance = Math.abs(c - middleC);
+        if (cDistance < minCDistance) {
+          minCDistance = cDistance;
+          bestSeat = seat;
+        }
+      }
+    });
+    
+    return bestSeat;
+  };
+  
+  // 選取指定數量的座位
+  const selectedSeats = [];
+  const remainingSeats = [...allAvailableSeats];
+  
+  for (let i = 0; i < quantity; i++) {
+    // 傳入前一張選取的座位（如果有的話）
+    const previousSeat = selectedSeats.length > 0 ? selectedSeats[selectedSeats.length - 1] : null;
+    const bestSeat = selectBestSeat(remainingSeats, previousSeat);
+    if (!bestSeat) {
+      throw new Error(`無法選取第 ${i + 1} 張票的座位`);
+    }
+    
+    selectedSeats.push(bestSeat);
+    
+    // 從剩餘座位中移除已選座位（使用參考相等或座標比對）
+    const index = remainingSeats.findIndex(seat => {
+      // 使用參考相等（最準確）
+      if (seat === bestSeat) {
+        return true;
+      }
+      // 使用座標比對（x, y）
+      if (seat.x === bestSeat.x && seat.y === bestSeat.y) {
+        return true;
+      }
+      // 使用 r 和 c 比對（支援字串和數字）
+      const seatR = toNumber(seat.r);
+      const seatC = toNumber(seat.c);
+      const bestR = toNumber(bestSeat.r);
+      const bestC = toNumber(bestSeat.c);
+      if (seatR === bestR && seatC === bestC && seatR > 0 && seatC > 0) {
+        return true;
+      }
+      return false;
+    });
+    if (index !== -1) {
+      remainingSeats.splice(index, 1);
+    }
+  }
   
   return selectedSeats;
 }

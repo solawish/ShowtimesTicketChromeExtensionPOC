@@ -1,10 +1,11 @@
 # seat-selection Specification
 
 ## Purpose
-TBD - created by archiving change add-seat-selection-fetch. Update Purpose after archive.
+系統提供座位選擇功能，透過 API 取得場次座位並使用中間偏好演算法選取可用座位。選取邏輯優先選擇靠近中間位置的座位，並在選取多張票時優先選擇同一排且符合有效範圍的座位，以提供較佳的觀影體驗。
+
 ## Requirements
 ### Requirement: 取得場次座位並挑選可用座位
-系統 SHALL 透過帶權杖的座位 API 取得場次座位並挑選一席可用座位供後續流程使用。
+系統 SHALL 透過帶權杖的座位 API 取得場次座位並挑選可用座位供後續流程使用。選取邏輯應優先選擇靠近中間位置的座位，並在選取多張票時優先選擇同一排且符合有效範圍的座位，以提供較佳的觀影體驗。
 
 #### Scenario: 帶權杖呼叫座位 API
 - **WHEN** 擴展持有座位選擇路由上的場次 ID
@@ -13,8 +14,24 @@ TBD - created by archiving change add-seat-selection-fetch. Update Purpose after
 - **AND** 在請求標頭加入 `Authorization: Bearer <jwt>`
 - **AND** 成功取得回應中的 `payload.seats[]`
 
-#### Scenario: 選擇可用座位
-- **WHEN** 回應中的 `payload.seats[]` 含有 `e === true` 的座位
-- **THEN** 系統 SHALL 選擇其中任一席作為初步選位（目前可選擇第一筆符合者）
+#### Scenario: 選擇可用座位（單張票）
+- **WHEN** 回應中的 `payload.seats[]` 含有可用座位
+- **THEN** 系統 SHALL 先找出陣列中全部最大的 `r`（列）和 `c`（行）值作為座位範圍大小
+- **AND** 過濾掉陣列中沒有 `e` 屬性的座位
+- **AND** 過濾掉 `e === false` 的座位（僅保留 `e === true` 的可用座位）
+- **AND** 計算每排（r 值）的有效範圍（中間 50%，排除前後 25%）
+- **AND** 只考慮在有效範圍內的座位（排除前後 25%）
+- **AND** 優先選擇 `r`（列）值最接近中間值的座位
+- **AND** 在相同 `r` 值中，優先選擇 `c`（行）值最接近中間值的座位
 - **AND** 保存所選座位的座標或識別資訊以供後續流程使用
+
+#### Scenario: 選擇可用座位（多張票）
+- **WHEN** 需要選取多張票（quantity > 1）
+- **THEN** 系統 SHALL 對每張票重複執行單張票的選取邏輯
+- **AND** 選取第二張及之後的票時，優先檢查是否可以與前一張選同一排（r 值相同）
+- **AND** 同一排優先選取時，只考慮 `c` 值在該排有效範圍內（中間 50%）的座位
+- **AND** 如果符合同一排條件，優先選擇 `c` 值最接近前一張座位的座位
+- **AND** 如果沒有符合同一排條件的座位，使用原本的中間偏好邏輯選取
+- **AND** 每選取一張票後，排除該座位以避免重複選取
+- **AND** 保存所有所選座位的座標或識別資訊以供後續流程使用
 
