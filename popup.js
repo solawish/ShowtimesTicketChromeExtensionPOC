@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSavedState();
   await loadMovies();
   setupEventListeners();
+  updateQuantityOptions(); // 初始化數量選單
   updateBookButtonState();
   updateTicketTypeReloadButtonState();
 });
@@ -96,7 +97,7 @@ async function handleMovieChange() {
   const movieId = elements.movieSelect.value;
   
   if (!movieId) {
-    resetDependentMenus(['venue', 'time', 'ticketType', 'quantity']);
+    resetDependentMenus(['venue', 'time', 'ticketType']);
     config.movieId = null;
     config.venueId = null;
     config.venueName = null;
@@ -104,7 +105,7 @@ async function handleMovieChange() {
     config.ticketTypeCategory = null;
     config.selectedTicketType = null;
     config.ticketTypes = [];
-    config.quantity = 1;
+    // 數量選單不受影響，不重置 config.quantity
     updateBookButtonState();
     await saveState();
     return;
@@ -122,10 +123,10 @@ async function handleMovieChange() {
     config.ticketTypeCategory = null;
     config.selectedTicketType = null;
     config.ticketTypes = [];
-    config.quantity = 1;
+    // 數量選單不受影響，不重置 config.quantity
     config.venueNameToIds = {};
     // 重置下層選單，但保持禁用狀態（會在 loadVenuesAndTimes 中啟用）
-    resetDependentMenus(['venue', 'time', 'ticketType', 'quantity']);
+    resetDependentMenus(['venue', 'time', 'ticketType']);
     updateBookButtonState();
   }
   
@@ -199,14 +200,14 @@ function handleVenueChange() {
   const venueName = elements.venueSelect.value;
   
   if (!venueName) {
-    resetDependentMenus(['time', 'ticketType', 'quantity']);
+    resetDependentMenus(['time', 'ticketType']);
     config.venueId = null;
     config.venueName = null;
     config.eventId = null;
     config.ticketTypeCategory = null;
     config.selectedTicketType = null;
     config.ticketTypes = [];
-    config.quantity = 1;
+    // 數量選單不受影響，不重置 config.quantity
     updateBookButtonState();
     saveState();
     return;
@@ -227,9 +228,9 @@ function handleVenueChange() {
     config.ticketTypeCategory = null;
     config.selectedTicketType = null;
     config.ticketTypes = [];
-    config.quantity = 1;
+    // 數量選單不受影響，不重置 config.quantity
     // 重置下層選單，但保持禁用狀態（會在 updateTimeOptions 中啟用）
-    resetDependentMenus(['time', 'ticketType', 'quantity']);
+    resetDependentMenus(['time', 'ticketType']);
     updateBookButtonState();
   }
   
@@ -283,7 +284,7 @@ async function handleTimeChange() {
   const eventId = elements.timeSelect.value;
   
   if (!eventId) {
-    resetDependentMenus(['ticketType', 'quantity']);
+    resetDependentMenus(['ticketType']);
     config.eventId = null;
     updateBookButtonState();
     updateTicketTypeReloadButtonState();
@@ -301,9 +302,9 @@ async function handleTimeChange() {
   // 如果時間改變了（不是第一次選擇），重置下層選單的 config 值
   if (previousEventId !== null && previousEventId !== config.eventId) {
     config.ticketTypeCategory = null;
-    config.quantity = 1;
+    // 數量選單不受影響，不重置 config.quantity
     // 重置下層選單，但保持禁用狀態（會在 loadTicketTypes 中啟用）
-    resetDependentMenus(['ticketType', 'quantity']);
+    resetDependentMenus(['ticketType']);
   }
   
   await saveState();
@@ -375,7 +376,7 @@ async function loadTicketTypes() {
         if (selectedType) {
           config.selectedTicketType = selectedType;
         }
-        updateQuantityOptions();
+        // 數量選單不受影響，不需要呼叫 updateQuantityOptions()
       } else {
         // 確保顯示預設選項
         elements.ticketTypeSelect.value = '';
@@ -426,13 +427,13 @@ async function handleTicketTypeReload() {
       elements.ticketTypeSelect.value = currentTicketTypeCategory;
       config.ticketTypeCategory = currentTicketTypeCategory;
       config.selectedTicketType = selectedType;
-      updateQuantityOptions();
+      // 數量選單不受影響，不需要呼叫 updateQuantityOptions()
     } else {
       // 票種不存在，清空選擇
       elements.ticketTypeSelect.value = '';
       config.ticketTypeCategory = null;
       config.selectedTicketType = null;
-      resetDependentMenus(['quantity']);
+      // 數量選單不受影響
     }
     await saveState();
   }
@@ -452,7 +453,7 @@ function handleTicketTypeChange() {
   const value = elements.ticketTypeSelect.value; // 現在是 category.subCategory 格式
   
   if (!value) {
-    resetDependentMenus(['quantity']);
+    // 數量選單不受影響
     config.ticketTypeCategory = null;
     config.selectedTicketType = null;
     saveState();
@@ -481,15 +482,10 @@ function handleTicketTypeChange() {
     config.selectedTicketType = selectedType;
   }
   
-  // 如果票種改變了（不是第一次選擇），重置數量選單的 config 值
-  if (previousCategory !== null && previousCategory !== config.ticketTypeCategory) {
-    config.quantity = 1;
-    // 重置數量選單，但保持禁用狀態（會在 updateQuantityOptions 中啟用）
-    resetDependentMenus(['quantity']);
-  }
+  // 數量選單不受影響，不重置 config.quantity
   
   saveState();
-  updateQuantityOptions();
+  // 數量選單不受影響，不需要呼叫 updateQuantityOptions()
 }
 
 // 更新數量選項
@@ -540,6 +536,10 @@ function updateBookButtonState() {
 // 重置依賴選單
 function resetDependentMenus(menuNames) {
   menuNames.forEach(name => {
+    // 跳過數量選單，數量選單不受約束
+    if (name === 'quantity') {
+      return;
+    }
     const select = elements[`${name}Select`];
     if (select) {
       select.innerHTML = `<option value="">請先選擇${getPreviousMenuName(name)}</option>`;
