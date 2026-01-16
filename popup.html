@@ -39,9 +39,12 @@
 
     <div class="form-group">
       <label for="ticket-type-select">票種</label>
-      <select id="ticket-type-select" class="select-menu" disabled>
-        <option value="">請先選擇時間</option>
-      </select>
+      <div class="select-with-button">
+        <select id="ticket-type-select" class="select-menu" disabled>
+          <option value="">請先選擇時間</option>
+        </select>
+        <button id="ticket-type-reload-button" class="reload-button" type="button" disabled>重新讀取</button>
+      </div>
       <div class="loading" id="ticket-type-loading" style="display: none;">載入中...</div>
       <div class="error" id="ticket-type-error" style="display: none;"></div>
     </div>

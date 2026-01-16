@@ -28,7 +28,8 @@ const elements = {
   timeError: document.getElementById('time-error'),
   ticketTypeError: document.getElementById('ticket-type-error'),
   statusMessage: document.getElementById('status-message'),
-  bookButton: document.getElementById('book-button')
+  bookButton: document.getElementById('book-button'),
+  ticketTypeReloadButton: document.getElementById('ticket-type-reload-button')
 };
 
 // 初始化
@@ -37,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadMovies();
   setupEventListeners();
   updateBookButtonState();
+  updateTicketTypeReloadButtonState();
 });
 
 // 設定事件監聽器
@@ -47,6 +49,7 @@ function setupEventListeners() {
   elements.ticketTypeSelect.addEventListener('change', handleTicketTypeChange);
   elements.quantitySelect.addEventListener('change', handleQuantityChange);
   elements.bookButton.addEventListener('click', handleBookClick);
+  elements.ticketTypeReloadButton.addEventListener('click', handleTicketTypeReload);
 }
 
 // 載入電影列表
@@ -283,6 +286,7 @@ async function handleTimeChange() {
     resetDependentMenus(['ticketType', 'quantity']);
     config.eventId = null;
     updateBookButtonState();
+    updateTicketTypeReloadButtonState();
     await saveState();
     return;
   }
@@ -291,6 +295,8 @@ async function handleTimeChange() {
   const previousEventId = config.eventId;
   config.eventId = parseInt(eventId);
   updateBookButtonState();
+  // 已選擇時間，啟用重新讀取按鈕
+  updateTicketTypeReloadButtonState();
   
   // 如果時間改變了（不是第一次選擇），重置下層選單的 config 值
   if (previousEventId !== null && previousEventId !== config.eventId) {
@@ -306,10 +312,15 @@ async function handleTimeChange() {
 
 // 載入票種
 async function loadTicketTypes() {
-  if (!config.eventId) return;
+  if (!config.eventId) {
+    updateTicketTypeReloadButtonState();
+    return;
+  }
   
   showLoading('ticketType');
   hideError('ticketType');
+  // 確保在載入中時按鈕也是啟用的
+  updateTicketTypeReloadButtonState();
   
   try {
     const url = `https://capi.showtimes.com.tw/1/ticketTypes/forEvent/${config.eventId}?includeGroupTicket=true&includeMemberRedeem=true&version=03.00.00`;
@@ -341,6 +352,7 @@ async function loadTicketTypes() {
       });
       
       elements.ticketTypeSelect.disabled = false;
+      updateTicketTypeReloadButtonState();
       
       // 恢復票種選擇
       if (config.ticketTypeCategory) {
@@ -376,6 +388,62 @@ async function loadTicketTypes() {
     console.error('載入票種失敗:', error);
   } finally {
     hideLoading('ticketType');
+    updateTicketTypeReloadButtonState();
+  }
+}
+
+// 處理票種重新讀取按鈕點擊
+async function handleTicketTypeReload() {
+  // 只要已選擇時間（有 eventId），就可以重新載入，不管選單是否禁用
+  if (!config.eventId) {
+    return;
+  }
+  
+  // 保存當前選定的票種類別，以便重新載入後嘗試恢復
+  const currentTicketTypeCategory = config.ticketTypeCategory;
+  
+  // 重新載入票種資料
+  await loadTicketTypes();
+  
+  // 嘗試恢復之前選定的票種（如果仍存在）
+  if (currentTicketTypeCategory) {
+    const [category, subCategory] = currentTicketTypeCategory.split('.');
+    const selectedType = config.ticketTypes.find(tt => {
+      let ttSubCategory = tt.subCategory;
+      if (!ttSubCategory && tt.meta && tt.meta.sources && tt.meta.sources.vista) {
+        const vistaSource = tt.meta.sources.vista;
+        if (typeof vistaSource === 'string' && vistaSource.includes('-')) {
+          ttSubCategory = vistaSource.split('-')[1];
+        } else if (vistaSource && vistaSource.TicketTypeCode) {
+          ttSubCategory = vistaSource.TicketTypeCode;
+        }
+      }
+      return tt.category === category && (ttSubCategory || '') === (subCategory || '');
+    });
+    
+    if (selectedType) {
+      // 票種仍存在，恢復選擇
+      elements.ticketTypeSelect.value = currentTicketTypeCategory;
+      config.ticketTypeCategory = currentTicketTypeCategory;
+      config.selectedTicketType = selectedType;
+      updateQuantityOptions();
+    } else {
+      // 票種不存在，清空選擇
+      elements.ticketTypeSelect.value = '';
+      config.ticketTypeCategory = null;
+      config.selectedTicketType = null;
+      resetDependentMenus(['quantity']);
+    }
+    await saveState();
+  }
+}
+
+// 更新票種重新讀取按鈕狀態
+function updateTicketTypeReloadButtonState() {
+  if (elements.ticketTypeReloadButton) {
+    // 按鈕應在已選擇時間（有 eventId）時才可點擊
+    // 即使在載入中或失敗時，只要已選擇時間，按鈕就應該啟用
+    elements.ticketTypeReloadButton.disabled = !config.eventId;
   }
 }
 
@@ -477,6 +545,10 @@ function resetDependentMenus(menuNames) {
       select.innerHTML = `<option value="">請先選擇${getPreviousMenuName(name)}</option>`;
       select.disabled = true;
       select.value = '';
+    }
+    // 如果重置的是票種選單，同時禁用重新讀取按鈕
+    if (name === 'ticketType') {
+      updateTicketTypeReloadButtonState();
     }
   });
 }
