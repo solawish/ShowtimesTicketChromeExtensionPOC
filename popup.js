@@ -339,11 +339,32 @@ async function loadTicketTypes() {
     
     if (data.msg === 'Success' && data.payload && data.payload.ticketTypes) {
       // 暫存完整的票種資料
-      config.ticketTypes = data.payload.ticketTypes;
+      // 按照 sortOrder 欄位進行升序排序，缺少 sortOrder 或 sortOrder 為 null/undefined 的項目排在最後
+      const sortedTicketTypes = [...data.payload.ticketTypes].sort((a, b) => {
+        const sortOrderA = a.sortOrder;
+        const sortOrderB = b.sortOrder;
+        
+        // 如果兩個都有 sortOrder，按升序排序（sortOrder 小的在前面）
+        if (sortOrderA != null && sortOrderB != null) {
+          return sortOrderA - sortOrderB;
+        }
+        // 如果只有 A 有 sortOrder，A 排在前面
+        if (sortOrderA != null && sortOrderB == null) {
+          return -1;
+        }
+        // 如果只有 B 有 sortOrder，B 排在前面
+        if (sortOrderA == null && sortOrderB != null) {
+          return 1;
+        }
+        // 如果兩個都沒有 sortOrder，保持原順序
+        return 0;
+      });
+      
+      config.ticketTypes = sortedTicketTypes;
       
       elements.ticketTypeSelect.innerHTML = '<option value="">請選擇票種</option>';
       
-      data.payload.ticketTypes.forEach(ticketType => {
+      sortedTicketTypes.forEach(ticketType => {
         const option = document.createElement('option');
         // 取得 subCategory，可能從 ticketType.subCategory 或 meta.sources.vista 中取得
         let subCategory = ticketType.subCategory;
@@ -827,7 +848,28 @@ async function handleBookClick() {
       const data = await response.json();
       
       if (data.msg === 'Success' && data.payload && data.payload.ticketTypes) {
-        const ticketTypes = data.payload.ticketTypes;
+        // 按照 sortOrder 欄位進行升序排序，缺少 sortOrder 或 sortOrder 為 null/undefined 的項目排在最後
+        const sortedTicketTypes = [...data.payload.ticketTypes].sort((a, b) => {
+          const sortOrderA = a.sortOrder;
+          const sortOrderB = b.sortOrder;
+          
+          // 如果兩個都有 sortOrder，按升序排序（sortOrder 小的在前面）
+          if (sortOrderA != null && sortOrderB != null) {
+            return sortOrderA - sortOrderB;
+          }
+          // 如果只有 A 有 sortOrder，A 排在前面
+          if (sortOrderA != null && sortOrderB == null) {
+            return -1;
+          }
+          // 如果只有 B 有 sortOrder，B 排在前面
+          if (sortOrderA == null && sortOrderB != null) {
+            return 1;
+          }
+          // 如果兩個都沒有 sortOrder，保持原順序
+          return 0;
+        });
+        
+        const ticketTypes = sortedTicketTypes;
         // 使用自動選票函數選出票種
         const selectedTicket = selectTicketByKeyword(ticketTypes, config.ticketKeyword);
         
@@ -838,7 +880,7 @@ async function handleBookClick() {
         
         // 設定選定的票種
         config.selectedTicketType = selectedTicket;
-        config.ticketTypes = ticketTypes;
+        config.ticketTypes = sortedTicketTypes;
         
         // 計算 category.subCategory 格式的值
         let subCategory = selectedTicket.subCategory;
