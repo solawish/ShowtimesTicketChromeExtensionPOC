@@ -518,7 +518,7 @@ function handleTicketKeywordAutoSelectChange() {
 }
 
 // 依關鍵字與 fallback 規則選票
-// 順序：先排除老人/愛心，然後關鍵字匹配 → 全票 → 單人套票 → 第一個
+// 順序：先排除敬老/愛心，然後關鍵字匹配 → 全票 → 單人套票 → 第一個
 // 輸入：票種列表（含 title）與關鍵字字串
 // 輸出：符合規則的第一個票種或 null
 function selectTicketByKeyword(ticketTypes, keyword) {
@@ -526,9 +526,9 @@ function selectTicketByKeyword(ticketTypes, keyword) {
     return null;
   }
   
-  // 先排除老人、愛心票種
+  // 先排除敬老、愛心票種
   const filtered = ticketTypes.filter(tt =>
-    tt.title && !tt.title.includes('老人') && !tt.title.includes('愛心')
+    tt.title && !tt.title.includes('敬老') && !tt.title.includes('愛心')
   );
   if (filtered.length === 0) {
     return null;
