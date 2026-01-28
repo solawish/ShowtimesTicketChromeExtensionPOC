@@ -47,8 +47,9 @@
         </label>
       </div>
       <div class="keyword-hint" id="ticket-keyword-hint" style="display: none;">
-        啟用後不需使用且會無視下方「票種」下拉式選單，系統會在按下訂票時依關鍵字或預設優先順序（關鍵字 → 全票 → 單人套票 → 排除老人／愛心後取第一個）自動選擇票種後再繼續流程
+        啟用後不需使用且會無視下方「票種」下拉式選單，系統會在按下訂票時依關鍵字或預設優先順序（先排除老人／愛心，然後關鍵字 → 全票 → 單人套票 → 第一個）自動選擇票種後再繼續流程
       </div>
+      <div class="keyword-validation error" id="ticket-keyword-validation" style="display: none;">請輸入關鍵詞</div>
     </div>
 
     <div class="form-group">

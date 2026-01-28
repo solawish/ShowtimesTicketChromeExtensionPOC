@@ -34,7 +34,8 @@ const elements = {
   ticketTypeReloadButton: document.getElementById('ticket-type-reload-button'),
   ticketKeywordInput: document.getElementById('ticket-keyword-input'),
   ticketKeywordAutoSelect: document.getElementById('ticket-keyword-auto-select'),
-  ticketKeywordHint: document.getElementById('ticket-keyword-hint')
+  ticketKeywordHint: document.getElementById('ticket-keyword-hint'),
+  ticketKeywordValidation: document.getElementById('ticket-keyword-validation')
 };
 
 // 初始化
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadMovies();
   setupEventListeners();
   updateQuantityOptions(); // 初始化數量選單
+  updateTicketKeywordValidationVisibility();
   updateBookButtonState();
   updateTicketTypeReloadButtonState();
 });
@@ -498,6 +500,7 @@ function handleTicketTypeChange() {
 // 處理票種關鍵詞輸入變更
 function handleTicketKeywordChange() {
   config.ticketKeyword = elements.ticketKeywordInput.value.trim();
+  updateTicketKeywordValidationVisibility();
   updateBookButtonState();
   saveState();
 }
@@ -509,11 +512,13 @@ function handleTicketKeywordAutoSelectChange() {
   if (elements.ticketKeywordHint) {
     elements.ticketKeywordHint.style.display = config.ticketKeywordAutoSelect ? 'block' : 'none';
   }
+  updateTicketKeywordValidationVisibility();
   updateBookButtonState();
   saveState();
 }
 
 // 依關鍵字與 fallback 規則選票
+// 順序：先排除老人/愛心，然後關鍵字匹配 → 全票 → 單人套票 → 第一個
 // 輸入：票種列表（含 title）與關鍵字字串
 // 輸出：符合規則的第一個票種或 null
 function selectTicketByKeyword(ticketTypes, keyword) {
@@ -521,11 +526,19 @@ function selectTicketByKeyword(ticketTypes, keyword) {
     return null;
   }
   
+  // 先排除老人、愛心票種
+  const filtered = ticketTypes.filter(tt =>
+    tt.title && !tt.title.includes('老人') && !tt.title.includes('愛心')
+  );
+  if (filtered.length === 0) {
+    return null;
+  }
+  
   const trimmedKeyword = keyword ? keyword.trim() : '';
   
   // 規則 1: 關鍵字包含
   if (trimmedKeyword) {
-    const keywordMatch = ticketTypes.find(tt => 
+    const keywordMatch = filtered.find(tt =>
       tt.title && tt.title.includes(trimmedKeyword)
     );
     if (keywordMatch) {
@@ -534,7 +547,7 @@ function selectTicketByKeyword(ticketTypes, keyword) {
   }
   
   // 規則 2: 全票
-  const quanPiaoMatch = ticketTypes.find(tt => 
+  const quanPiaoMatch = filtered.find(tt =>
     tt.title && tt.title.includes('全票')
   );
   if (quanPiaoMatch) {
@@ -542,23 +555,15 @@ function selectTicketByKeyword(ticketTypes, keyword) {
   }
   
   // 規則 3: 單人套票
-  const singlePackageMatch = ticketTypes.find(tt => 
+  const singlePackageMatch = filtered.find(tt =>
     tt.title && tt.title.includes('單人套票')
   );
   if (singlePackageMatch) {
     return singlePackageMatch;
   }
   
-  // 規則 4: 排除老人、愛心後取第一個
-  const filtered = ticketTypes.filter(tt => 
-    tt.title && !tt.title.includes('老人') && !tt.title.includes('愛心')
-  );
-  if (filtered.length > 0) {
-    return filtered[0];
-  }
-  
-  // 無符合結果
-  return null;
+  // 規則 4: 取第一個
+  return filtered[0];
 }
 
 // 更新數量選項
@@ -600,6 +605,14 @@ function checkCompletion() {
   }
 }
 
+// 更新關鍵字必填驗證提示顯示
+function updateTicketKeywordValidationVisibility() {
+  if (!elements.ticketKeywordValidation) return;
+  const isChecked = config.ticketKeywordAutoSelect;
+  const isEmpty = !config.ticketKeyword || config.ticketKeyword.trim().length === 0;
+  elements.ticketKeywordValidation.style.display = isChecked && isEmpty ? 'block' : 'none';
+}
+
 // 更新訂票按鈕可用狀態
 function updateBookButtonState() {
   if (!elements.bookButton) return;
@@ -610,7 +623,13 @@ function updateBookButtonState() {
     return;
   }
   
-  // 檢查是否啟用自動選票模式
+  // 勾選關鍵詞選票時關鍵字必填：若勾選但關鍵字為空則禁用訂票按鈕
+  if (config.ticketKeywordAutoSelect && (!config.ticketKeyword || config.ticketKeyword.trim().length === 0)) {
+    elements.bookButton.disabled = true;
+    return;
+  }
+  
+  // 檢查是否啟用自動選票模式（勾選且關鍵字有值）
   const isAutoSelectEnabled = config.ticketKeywordAutoSelect && 
                               config.ticketKeyword && 
                               config.ticketKeyword.trim().length > 0;
@@ -774,6 +793,7 @@ async function loadSavedState() {
           elements.ticketKeywordHint.style.display = config.ticketKeywordAutoSelect ? 'block' : 'none';
         }
       }
+      updateTicketKeywordValidationVisibility();
     }
   } catch (error) {
     console.error('載入狀態失敗:', error);
