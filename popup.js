@@ -9,7 +9,9 @@ const config = {
   ticketTypes: [], // 暫存票種資料
   quantity: 1,
   events: [], // 暫存場次資料
-  venueNameToIds: {} // 場地名稱到 ID 陣列的映射
+  venueNameToIds: {}, // 場地名稱到 ID 陣列的映射
+  ticketKeyword: '', // 票種關鍵詞
+  ticketKeywordAutoSelect: false // 是否啟用依關鍵詞自動選票
 };
 
 // DOM 元素
@@ -29,7 +31,10 @@ const elements = {
   ticketTypeError: document.getElementById('ticket-type-error'),
   statusMessage: document.getElementById('status-message'),
   bookButton: document.getElementById('book-button'),
-  ticketTypeReloadButton: document.getElementById('ticket-type-reload-button')
+  ticketTypeReloadButton: document.getElementById('ticket-type-reload-button'),
+  ticketKeywordInput: document.getElementById('ticket-keyword-input'),
+  ticketKeywordAutoSelect: document.getElementById('ticket-keyword-auto-select'),
+  ticketKeywordHint: document.getElementById('ticket-keyword-hint')
 };
 
 // 初始化
@@ -51,6 +56,8 @@ function setupEventListeners() {
   elements.quantitySelect.addEventListener('change', handleQuantityChange);
   elements.bookButton.addEventListener('click', handleBookClick);
   elements.ticketTypeReloadButton.addEventListener('click', handleTicketTypeReload);
+  elements.ticketKeywordInput.addEventListener('input', handleTicketKeywordChange);
+  elements.ticketKeywordAutoSelect.addEventListener('change', handleTicketKeywordAutoSelectChange);
 }
 
 // 載入電影列表
@@ -488,6 +495,72 @@ function handleTicketTypeChange() {
   // 數量選單不受影響，不需要呼叫 updateQuantityOptions()
 }
 
+// 處理票種關鍵詞輸入變更
+function handleTicketKeywordChange() {
+  config.ticketKeyword = elements.ticketKeywordInput.value.trim();
+  updateBookButtonState();
+  saveState();
+}
+
+// 處理票種關鍵詞自動選票勾選變更
+function handleTicketKeywordAutoSelectChange() {
+  config.ticketKeywordAutoSelect = elements.ticketKeywordAutoSelect.checked;
+  // 顯示或隱藏說明
+  if (elements.ticketKeywordHint) {
+    elements.ticketKeywordHint.style.display = config.ticketKeywordAutoSelect ? 'block' : 'none';
+  }
+  updateBookButtonState();
+  saveState();
+}
+
+// 依關鍵字與 fallback 規則選票
+// 輸入：票種列表（含 title）與關鍵字字串
+// 輸出：符合規則的第一個票種或 null
+function selectTicketByKeyword(ticketTypes, keyword) {
+  if (!ticketTypes || ticketTypes.length === 0) {
+    return null;
+  }
+  
+  const trimmedKeyword = keyword ? keyword.trim() : '';
+  
+  // 規則 1: 關鍵字包含
+  if (trimmedKeyword) {
+    const keywordMatch = ticketTypes.find(tt => 
+      tt.title && tt.title.includes(trimmedKeyword)
+    );
+    if (keywordMatch) {
+      return keywordMatch;
+    }
+  }
+  
+  // 規則 2: 全票
+  const quanPiaoMatch = ticketTypes.find(tt => 
+    tt.title && tt.title.includes('全票')
+  );
+  if (quanPiaoMatch) {
+    return quanPiaoMatch;
+  }
+  
+  // 規則 3: 單人套票
+  const singlePackageMatch = ticketTypes.find(tt => 
+    tt.title && tt.title.includes('單人套票')
+  );
+  if (singlePackageMatch) {
+    return singlePackageMatch;
+  }
+  
+  // 規則 4: 排除老人、愛心後取第一個
+  const filtered = ticketTypes.filter(tt => 
+    tt.title && !tt.title.includes('老人') && !tt.title.includes('愛心')
+  );
+  if (filtered.length > 0) {
+    return filtered[0];
+  }
+  
+  // 無符合結果
+  return null;
+}
+
 // 更新數量選項
 function updateQuantityOptions() {
   elements.quantitySelect.innerHTML = '<option value="">請選擇數量</option>';
@@ -530,7 +603,25 @@ function checkCompletion() {
 // 更新訂票按鈕可用狀態
 function updateBookButtonState() {
   if (!elements.bookButton) return;
-  elements.bookButton.disabled = !config.eventId;
+  
+  // 基本條件：必須有 eventId
+  if (!config.eventId) {
+    elements.bookButton.disabled = true;
+    return;
+  }
+  
+  // 檢查是否啟用自動選票模式
+  const isAutoSelectEnabled = config.ticketKeywordAutoSelect && 
+                              config.ticketKeyword && 
+                              config.ticketKeyword.trim().length > 0;
+  
+  if (isAutoSelectEnabled) {
+    // 自動選票模式：不要求手動選擇票種，但仍需有數量
+    elements.bookButton.disabled = !config.quantity;
+  } else {
+    // 一般模式：必須手動選擇票種和數量
+    elements.bookButton.disabled = !config.selectedTicketType || !config.quantity;
+  }
 }
 
 // 重置依賴選單
@@ -647,7 +738,9 @@ async function saveState() {
         venueName: config.venueName, // 儲存場地名稱
         eventId: config.eventId,
         ticketTypeCategory: config.ticketTypeCategory,
-        quantity: config.quantity
+        quantity: config.quantity,
+        ticketKeyword: config.ticketKeyword,
+        ticketKeywordAutoSelect: config.ticketKeywordAutoSelect
       }
     });
   } catch (error) {
@@ -667,6 +760,20 @@ async function loadSavedState() {
       config.eventId = saved.eventId;
       config.ticketTypeCategory = saved.ticketTypeCategory;
       config.quantity = saved.quantity || 1;
+      config.ticketKeyword = saved.ticketKeyword || '';
+      config.ticketKeywordAutoSelect = saved.ticketKeywordAutoSelect || false;
+      
+      // 恢復 UI 狀態
+      if (elements.ticketKeywordInput) {
+        elements.ticketKeywordInput.value = config.ticketKeyword;
+      }
+      if (elements.ticketKeywordAutoSelect) {
+        elements.ticketKeywordAutoSelect.checked = config.ticketKeywordAutoSelect;
+        // 顯示或隱藏說明
+        if (elements.ticketKeywordHint) {
+          elements.ticketKeywordHint.style.display = config.ticketKeywordAutoSelect ? 'block' : 'none';
+        }
+      }
     }
   } catch (error) {
     console.error('載入狀態失敗:', error);
@@ -680,14 +787,66 @@ async function handleBookClick() {
     return;
   }
   
-  if (!config.selectedTicketType) {
-    showStatusMessage('請先選擇票種', 'error');
-    return;
-  }
-  
   if (!config.quantity) {
     showStatusMessage('請先選擇數量', 'error');
     return;
+  }
+  
+  // 檢查是否啟用自動選票模式
+  const isAutoSelectEnabled = config.ticketKeywordAutoSelect && 
+                              config.ticketKeyword && 
+                              config.ticketKeyword.trim().length > 0;
+  
+  // 如果啟用自動選票，先呼叫 API 並選票
+  if (isAutoSelectEnabled) {
+    try {
+      showStatusMessage('載入票種中...', 'info');
+      // 呼叫票種 API
+      const url = `https://capi.showtimes.com.tw/1/ticketTypes/forEvent/${config.eventId}?includeGroupTicket=true&includeMemberRedeem=true&version=03.00.00`;
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.msg === 'Success' && data.payload && data.payload.ticketTypes) {
+        const ticketTypes = data.payload.ticketTypes;
+        // 使用自動選票函數選出票種
+        const selectedTicket = selectTicketByKeyword(ticketTypes, config.ticketKeyword);
+        
+        if (!selectedTicket) {
+          showStatusMessage('無法找到符合條件的票種，請調整關鍵詞或手動選擇票種', 'error');
+          return;
+        }
+        
+        // 設定選定的票種
+        config.selectedTicketType = selectedTicket;
+        config.ticketTypes = ticketTypes;
+        
+        // 計算 category.subCategory 格式的值
+        let subCategory = selectedTicket.subCategory;
+        if (!subCategory && selectedTicket.meta && selectedTicket.meta.sources && selectedTicket.meta.sources.vista) {
+          const vistaSource = selectedTicket.meta.sources.vista;
+          if (typeof vistaSource === 'string' && vistaSource.includes('-')) {
+            subCategory = vistaSource.split('-')[1];
+          } else if (vistaSource && vistaSource.TicketTypeCode) {
+            subCategory = vistaSource.TicketTypeCode;
+          }
+        }
+        config.ticketTypeCategory = `${selectedTicket.category}.${subCategory || ''}`;
+        
+        showStatusMessage(`已自動選擇票種：${selectedTicket.title}`, 'success');
+      } else {
+        throw new Error('無法取得票種資料');
+      }
+    } catch (error) {
+      console.error('自動選票失敗:', error);
+      showStatusMessage('載入票種失敗，請稍後再試', 'error');
+      return;
+    }
+  } else {
+    // 一般模式：必須已手動選擇票種
+    if (!config.selectedTicketType) {
+      showStatusMessage('請先選擇票種', 'error');
+      return;
+    }
   }
   
   try {

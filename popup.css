@@ -144,3 +144,50 @@ label {
   cursor: not-allowed;
   color: #999;
 }
+
+.keyword-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.keyword-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: #fff;
+}
+
+.keyword-input:focus {
+  outline: none;
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: normal;
+  margin: 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.keyword-hint {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: #fdecea;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #c0392b;
+  line-height: 1.5;
+}

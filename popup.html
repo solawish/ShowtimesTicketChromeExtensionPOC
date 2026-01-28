@@ -38,6 +38,20 @@
     </div>
 
     <div class="form-group">
+      <label for="ticket-keyword-input">票種關鍵詞</label>
+      <div class="keyword-input-group">
+        <input type="text" id="ticket-keyword-input" class="keyword-input" placeholder="輸入關鍵字（選填）">
+        <label class="checkbox-label">
+          <input type="checkbox" id="ticket-keyword-auto-select">
+          <span>啟用依關鍵詞自動選票</span>
+        </label>
+      </div>
+      <div class="keyword-hint" id="ticket-keyword-hint" style="display: none;">
+        啟用後不需使用且會無視下方「票種」下拉式選單，系統會在按下訂票時依關鍵字或預設優先順序（關鍵字 → 全票 → 單人套票 → 排除老人／愛心後取第一個）自動選擇票種後再繼續流程
+      </div>
+    </div>
+
+    <div class="form-group">
       <label for="ticket-type-select">票種</label>
       <div class="select-with-button">
         <select id="ticket-type-select" class="select-menu" disabled>
