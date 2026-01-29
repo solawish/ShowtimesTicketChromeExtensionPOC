@@ -10,6 +10,7 @@ const config = {
   quantity: 1,
   events: [], // 暫存場次資料
   venueNameToIds: {}, // 場地名稱到 ID 陣列的映射
+  corporations: [], // 暫存影城資料（來自 bootstrap），供場地排序使用
   ticketKeyword: '', // 票種關鍵詞
   ticketKeywordAutoSelect: false // 是否啟用依關鍵詞自動選票
 };
@@ -72,6 +73,9 @@ async function loadMovies() {
     const data = await response.json();
     
     if (data.msg === 'Success' && data.payload && data.payload.programs) {
+      // 暫存影城資料，供場地選單排序（與官網 ButtonsSelectorRow 一致）
+      config.corporations = data.payload.corporations || [];
+      
       const activePrograms = data.payload.programs.filter(p => p.status === 'active');
       
       // 清空現有選項（保留預設選項）
@@ -174,8 +178,32 @@ async function loadVenuesAndTimes() {
         
         // 去重場地名稱，只顯示唯一的 name
         const uniqueVenueNames = Object.keys(config.venueNameToIds);
+        
+        // 依所屬影城 sortOrder 降序排序（與官網 ButtonsSelectorRow 一致）
+        const corporations = config.corporations || [];
+        const events = config.events || [];
+        const venueIdToCorporationId = {};
+        events.forEach(e => {
+          if (e.venueId != null && e.corporationId != null && venueIdToCorporationId[e.venueId] == null) {
+            venueIdToCorporationId[e.venueId] = e.corporationId;
+          }
+        });
+        const sortedVenueNames = (corporations.length && Object.keys(venueIdToCorporationId).length)
+          ? uniqueVenueNames.slice().sort((a, b) => {
+              const venueIdsA = config.venueNameToIds[a] || [];
+              const venueIdsB = config.venueNameToIds[b] || [];
+              const corpIdA = venueIdsA.map(id => venueIdToCorporationId[id]).find(id => id != null);
+              const corpIdB = venueIdsB.map(id => venueIdToCorporationId[id]).find(id => id != null);
+              const corpA = corpIdA != null ? corporations.find(c => c.id === corpIdA) : null;
+              const corpB = corpIdB != null ? corporations.find(c => c.id === corpIdB) : null;
+              const orderA = corpA != null && corpA.sortOrder != null ? corpA.sortOrder : -Infinity;
+              const orderB = corpB != null && corpB.sortOrder != null ? corpB.sortOrder : -Infinity;
+              return orderB - orderA; // 降序，與 ButtonsSelectorRow 一致
+            })
+          : uniqueVenueNames;
+        
         elements.venueSelect.innerHTML = '<option value="">請選擇場地</option>';
-        uniqueVenueNames.forEach(venueName => {
+        sortedVenueNames.forEach(venueName => {
           const option = document.createElement('option');
           option.value = venueName; // 使用 name 作為值
           option.textContent = venueName;

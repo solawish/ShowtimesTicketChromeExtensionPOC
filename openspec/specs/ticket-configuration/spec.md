@@ -17,6 +17,8 @@
 - **AND** 呼叫場地與時間 API `GET https://capi.showtimes.com.tw/1/events/listForProgram/{programId}?date={date}&forVista=false`（使用選定的電影 ID 作為 programId，使用今天的日期作為 date，格式為 `YYYY-MM-DD`，例如：`2026-01-14`）
 - **AND** 場地下拉選單變為啟用狀態
 - **AND** 場地選單載入 `payload.venues[]` 中的場地選項（使用 `venue.name` 作為顯示，`venue.id` 作為值）
+- **AND** 場地選單選項依所屬影城（corporation）的 sortOrder 降序排序，與官網 ButtonsSelectorRow 的 options 排序一致；影城資料來自 bootstrap API 的 `payload.corporations`，場地與影城對應依 listForProgram 回傳的 events（如含 corporationId）或實作定義之方式建立
+- **AND** 無法對應至影城或影城無 sortOrder 的場地排在已排序項目之後；若無法取得影城資料或對應，則依 API 回傳順序（fallback）
 - **AND** 時間、票種選單保持禁用狀態並清空選項
 - **AND** 數量選單保持啟用狀態（不受影響）
 - **AND** 所有下層選單的內部狀態（config 值）被重置為 null 或預設值（數量除外）
